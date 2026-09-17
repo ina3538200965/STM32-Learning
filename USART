@@ -1,10 +1,35 @@
 #include "stm32f10x.h"       
 
+//使用串口一次性发送多个字节，pData:要发送的数据，Size：字节的数量
+void MY_USART_SendBytes(USART_TypeDef *USARTx,uint8_t *pData,uint16_t Size);
+	
+
+
 int main(void)
-{	
+{
+	GPIO_InitTypeDef GPIO_Initstruct;
+	
+		//开启AFIO
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO,ENABLE);
+	GPIO_PinRemapConfig(GPIO_Remap_USART1,ENABLE);
+	
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB,ENABLE); //开启时钟，GPIOB
+	
+	//配置PB6 TX 推挽输出
+	GPIO_Initstruct.GPIO_Pin=GPIO_Pin_6;
+	GPIO_Initstruct.GPIO_Mode=GPIO_Mode_AF_PP;
+	GPIO_Initstruct.GPIO_Speed=GPIO_Speed_10MHz;
+	GPIO_Init(GPIOB,&GPIO_Initstruct);
+	
+	//配置PB7 RX 上拉输入
+	GPIO_Initstruct.GPIO_Pin=GPIO_Pin_7;
+	GPIO_Initstruct.GPIO_Mode=GPIO_Mode_IPU;
+	GPIO_Init(GPIOB,&GPIO_Initstruct);
+	
+	
 	//开启时钟
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1,ENABLE);
-
+	
 	USART_InitTypeDef USART_InitStruct;
 	
 	//波特率115200
@@ -22,24 +47,29 @@ int main(void)
 
 	//上面为串口Usart初始化
 	
-	//开启时钟
-RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA,ENABLE);
-//	//声明一个结构体类型的变量
-GPIO_InitTypeDef GPIO_Initstruct;
+	//闭合USART模块开关
+	USART_Cmd(USART1,ENABLE);
 	
-	//配置PA9 TX 复用推挽输出
-GPIO_Initstruct.GPIO_Pin=GPIO_Pin_9;
-GPIO_Initstruct.GPIO_Mode=GPIO_Mode_AF_PP;
-GPIO_Initstruct.GPIO_Speed=GPIO_Speed_10MHz;
-GPIO_Init(GPIOA,&GPIO_Initstruct);
+	uint8_t bytesToSend[]={1,2,3,4,5};
 	
-  //配置PA10 RX 上拉输入
-GPIO_Initstruct.GPIO_Pin=GPIO_Pin_10;
-GPIO_Initstruct.GPIO_Mode=GPIO_Mode_IN_FLOATING;
-GPIO_Init(GPIOA,&GPIO_Initstruct);
+	MY_USART_SendBytes(USART1,bytesToSend,5);
 	
-	
-	while(1){
+	while(1)
+	{
 	}
 }
+
+
+void MY_USART_SendBytes(USART_TypeDef *USARTx,uint8_t *pData,uint16_t Size)
+	{
+for(uint32_t i=0;i<Size;i++){
+	//等发送数据寄存器空
+	while(USART_GetFlagStatus(USART1,USART_FLAG_TXE)==RESET);
+	//把要发送的数据写道数据寄存器
+	USART_SendData(USARTx,pData[i]);
+	}
+	//等待数据发送完成
+	while(USART_GetFlagStatus(USART1,USART_FLAG_TC)==RESET);
+}
+
 
