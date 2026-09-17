@@ -3,16 +3,33 @@
 //使用串口一次性发送多个字节，pData:要发送的数据，Size：字节的数量
 void MY_USART_SendBytes(USART_TypeDef *USARTx,uint8_t *pData,uint16_t Size);
 	
+void MY_USAET1_Init();
 
 
 int main(void)
 {
+	MY_USAET1_Init();
+	
+	uint8_t bytesToSend[]={1,2,3,4,5};
+	
+	MY_USART_SendBytes(USART1,bytesToSend,5);
+
+	while(1)
+	{
+	}
+}
+	
+//
+	//@简介：对USART1初始化
+//
+	void MY_USAET1_Init(){
 	GPIO_InitTypeDef GPIO_Initstruct;
 	
 		//开启AFIO
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO,ENABLE);
 	GPIO_PinRemapConfig(GPIO_Remap_USART1,ENABLE);
-	
+		
+	//开启时钟，GPIOB
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB,ENABLE); //开启时钟，GPIOB
 	
 	//配置PB6 TX 推挽输出
@@ -50,16 +67,14 @@ int main(void)
 	//闭合USART模块开关
 	USART_Cmd(USART1,ENABLE);
 	
-	uint8_t bytesToSend[]={1,2,3,4,5};
-	
-	MY_USART_SendBytes(USART1,bytesToSend,5);
-	
-	while(1)
-	{
-	}
 }
-
-
+	
+//
+	//@简介：通过串口发送多个字节
+	//@参数  USART:填写串口的名称
+	//@参数  pData:要发送的数据
+	//@参数  size：发送数据的数量(byte)
+//	
 void MY_USART_SendBytes(USART_TypeDef *USARTx,uint8_t *pData,uint16_t Size)
 	{
 for(uint32_t i=0;i<Size;i++){
