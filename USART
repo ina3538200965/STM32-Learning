@@ -1,5 +1,6 @@
 #include "stm32f10x.h"
-#include "stdio.h" 
+#include <stdio.h> 
+#include "delay.h"
 
 //使用串口一次性发送多个字节，pData:要发送的数据，Size：字节的数量
 void MY_USART_SendBytes(USART_TypeDef *USARTx, uint8_t *pData, uint16_t Size);
@@ -9,12 +10,36 @@ void MY_USART1_Init(void);
 
 int main(void)
 {
+	Delay_Init();
 	MY_USART1_Init();
 	
-	printf("this is my stm32 test. \r\n");
+//	printf("this is my stm32 test. \r\n");
+
 
 	while(1)
 	{
+		uint32_t CurrentTick = GetTick();
+		
+		//计算毫秒
+		uint32_t MiliSeconds = CurrentTick%1000;  
+		CurrentTick = CurrentTick / 1000;
+		
+		//计算秒
+		uint32_t Seconds = CurrentTick%60;
+		CurrentTick =CurrentTick / 60;
+		
+		//计算分钟
+		uint32_t Minute = CurrentTick%60;
+		CurrentTick =CurrentTick / 60;
+		
+		//计算小时
+		uint32_t Hourse =CurrentTick %60;
+		
+		//打印输出时分秒毫秒
+		printf("%02u:%02u:%02u:%03u\r\n",Hourse,Minute,Seconds,MiliSeconds);
+		
+		//1000ms循环一次
+		Delay(1000);
 	}
 }
 	
@@ -99,4 +124,3 @@ int main(void)
 	USART_SendData(USART1,(uint8_t)ch);
 	return ch;
 	}
-
