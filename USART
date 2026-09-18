@@ -1,48 +1,31 @@
 #include "stm32f10x.h"
-#include <stdio.h> 
-#include "delay.h"
 
-//使用串口一次性发送多个字节，pData:要发送的数据，Size：字节的数量
-void MY_USART_SendBytes(USART_TypeDef *USARTx, uint8_t *pData, uint16_t Size);
-	
+
+
+//初始化USART1
 void MY_USART1_Init(void);
-
+//初始化板载led灯
+void MY_OnBoardLed_Init(void);
 
 int main(void)
 {
-	Delay_Init();
 	MY_USART1_Init();
-	
-//	printf("this is my stm32 test. \r\n");
-
-
+    MY_OnBoardLed_Init();
 	while(1)
 	{
-		uint32_t CurrentTick = GetTick();
+		while(USART_GetFlagStatus(USART1,USART_FLAG_RXNE)==RESET);
 		
-		//计算毫秒
-		uint32_t MiliSeconds = CurrentTick%1000;  
-		CurrentTick = CurrentTick / 1000;
+		uint8_t byteRcvd=USART_ReceiveData(USART1);
 		
-		//计算秒
-		uint32_t Seconds = CurrentTick%60;
-		CurrentTick =CurrentTick / 60;
-		
-		//计算分钟
-		uint32_t Minute = CurrentTick%60;
-		CurrentTick =CurrentTick / 60;
-		
-		//计算小时
-		uint32_t Hourse =CurrentTick %60;
-		
-		//打印输出时分秒毫秒
-		printf("%02u:%02u:%02u:%03u\r\n",Hourse,Minute,Seconds,MiliSeconds);
-		
-		//1000ms循环一次
-		Delay(1000);
-	}
+		if(byteRcvd == '0'){
+			GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_SET);
+		}else if(byteRcvd == '1'){
+			GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_RESET);
+		}
+    }
 }
-	
+
+
 //
 	//@简介：对USART1初始化
 //
@@ -99,28 +82,22 @@ int main(void)
 	
 }
 	
-//
-	//@简介：通过串口发送多个字节
-	//@参数  USART:填写串口的名称
-	//@参数  pData:要发送的数据
-	//@参数  size：发送数据的数量(byte)
-//	
-	void MY_USART_SendBytes(USART_TypeDef *USARTx,uint8_t *pData,uint16_t Size){
-		uint32_t i;
-    for(i=0;i<Size;i++){
-	//等发送数据寄存器空
-	while(USART_GetFlagStatus(USART1,USART_FLAG_TXE)==RESET);
-	//把要发送的数据写道数据寄存器
-	USART_SendData(USARTx,pData[i]);
-	}
-	//等待数据发送完成
-	while(USART_GetFlagStatus(USART1,USART_FLAG_TC)==RESET);
-	
-}
 
-	int fputc(int ch,FILE *f){
-	while(USART_GetFlagStatus(USART1,USART_FLAG_TXE)==RESET);
-	
-	USART_SendData(USART1,(uint8_t)ch);
-	return ch;
+
+	void MY_OnBoardLed_Init(void){
+	//创建一个GPIO的结构体
+	GPIO_InitTypeDef GPIO_Initstruct;
+	//开启GPIOC的时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC,ENABLE);
+		
+	GPIO_Initstruct.GPIO_Pin=GPIO_Pin_13;
+	GPIO_Initstruct.GPIO_Mode=GPIO_Mode_Out_OD;
+	GPIO_Initstruct.GPIO_Speed=GPIO_Speed_2MHz;
+		
+	GPIO_Init(GPIOC,&GPIO_Initstruct);
+		
+	GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_SET); 	
 	}
+
+	
+	
