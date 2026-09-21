@@ -1,0 +1,65 @@
+uint16_t timeout = 0;
+    // 等待总线空闲
+    timeout = 0;
+    while(I2C_GetFlagStatus(I2Cx,I2C_FLAG_BUSY) == SET)
+    {
+        timeout++;
+        if(timeout>10000) return -1;
+    }
+    
+    I2C_GenerateSTART(I2Cx, ENABLE);
+    timeout=0;
+    while(I2C_GetFlagStatus(I2Cx,I2C_FLAG_SB) == RESET)
+    {
+        timeout++;
+        if(timeout>10000) return -2;
+    }
+    
+    I2C_SendData(I2Cx, Addr & 0xFE); // 写地址
+    
+    timeout=0;
+    while(I2C_GetFlagStatus(I2Cx,I2C_FLAG_ADDR) == RESET)
+    {
+        timeout++;
+        if(timeout>10000)
+        {
+            I2C_GenerateSTOP(I2Cx,ENABLE);
+            return -3;
+        }
+    }
+    // 硬件清除ADDR标志：读SR1 SR2
+    volatile uint16_t temp;
+    temp = I2C_ReadRegister(I2Cx, I2C_Register_SR1);
+    temp = I2C_ReadRegister(I2Cx, I2C_Register_SR2);
+    (void)temp;
+    
+    // 循环发送所有数据字节
+    for(uint16_t i=0;i<Size;i++)
+    {
+        timeout=0;
+        while(I2C_GetFlagStatus(I2Cx,I2C_FLAG_TXE) == RESET)
+        {
+            timeout++;
+            if(timeout>10000)
+            {
+                I2C_GenerateSTOP(I2Cx,ENABLE);
+                return -4;
+            }
+        }
+        I2C_SendData(I2Cx, pData[i]);
+        
+        timeout=0;
+        while(I2C_GetFlagStatus(I2Cx,I2C_FLAG_BTF) == RESET)
+        {
+            timeout++;
+            if(timeout>10000)
+            {
+                I2C_GenerateSTOP(I2Cx,ENABLE);
+                return -5;
+            }
+        }
+    }
+    // 全部发完，最后才产生停止位
+    I2C_GenerateSTOP(I2Cx,ENABLE);
+    return 0;
+}
