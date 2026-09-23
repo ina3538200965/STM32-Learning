@@ -1,0 +1,226 @@
+#include "stm32f10x.h"
+
+#define MY_I2C_TMO   10000u
+
+void My_I2C_Init(void);
+int  My_I2C_SendBytes(I2C_TypeDef *I2Cx, uint8_t Addr, uint8_t *pData, uint16_t Size);
+int  My_I2C_ReceiveBytes(I2C_TypeDef *I2Cx, uint8_t Addr, uint8_t *pData, uint16_t Size);
+
+static int My_I2C_WaitFlag(I2C_TypeDef *I2Cx, uint32_t Flag, int err)
+{
+    uint16_t timeout = 0;
+
+    while (I2C_GetFlagStatus(I2Cx, Flag) == RESET)
+    {
+        if (I2C_GetFlagStatus(I2Cx, I2C_FLAG_AF) == SET)
+        {
+            I2C_ClearFlag(I2Cx, I2C_FLAG_AF);
+            return err;
+        }
+        timeout++;
+        if (timeout > MY_I2C_TMO)
+            return err;
+    }
+    return 0;
+}
+
+static void My_I2C_ClearAddr(I2C_TypeDef *I2Cx)
+{
+    volatile uint16_t temp;
+    temp = I2C_ReadRegister(I2Cx, I2C_Register_SR1);
+    temp = I2C_ReadRegister(I2Cx, I2C_Register_SR2);
+    (void)temp;
+}
+
+void My_I2C_Init(void)
+{
+    GPIO_InitTypeDef   GPIO_InitStruct;
+    I2C_InitTypeDef    I2C_InitStruct;
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+    GPIO_PinRemapConfig(GPIO_Remap_I2C1, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+
+    GPIO_InitStruct.GPIO_Pin   = GPIO_Pin_8 | GPIO_Pin_9;
+    GPIO_InitStruct.GPIO_Mode  = GPIO_Mode_AF_OD;
+    GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1, ENABLE);
+    RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C1, ENABLE);
+    RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C1, DISABLE);
+
+    I2C_InitStruct.I2C_ClockSpeed          = 400000;
+    I2C_InitStruct.I2C_Mode                = I2C_Mode_I2C;
+    I2C_InitStruct.I2C_DutyCycle           = I2C_DutyCycle_2;
+    I2C_InitStruct.I2C_OwnAddress1         = 0x00;
+    I2C_InitStruct.I2C_Ack                 = I2C_Ack_Enable;
+    I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+    I2C_Init(I2C1, &I2C_InitStruct);
+
+    I2C_Cmd(I2C1, ENABLE);
+}
+
+int My_I2C_SendBytes(I2C_TypeDef *I2Cx, uint8_t Addr, uint8_t *pData, uint16_t Size)
+{
+    uint16_t timeout;
+    uint16_t i;
+    int ret;
+
+    if (Size > 0 && pData == 0)
+        return -6;
+
+    timeout = 0;
+    while (I2C_GetFlagStatus(I2Cx, I2C_FLAG_BUSY) == SET)
+    {
+        timeout++;
+        if (timeout > MY_I2C_TMO)
+            return -1;
+    }
+
+    I2C_GenerateSTART(I2Cx, ENABLE);
+    ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_SB, -2);
+    if (ret != 0)
+        return ret;
+
+    I2C_SendData(I2Cx, (uint8_t)(Addr & 0xFE));
+    ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_ADDR, -3);
+    if (ret != 0)
+    {
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        return ret;
+    }
+    My_I2C_ClearAddr(I2Cx);
+
+    for (i = 0; i < Size; i++)
+    {
+        ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_TXE, -4);
+        if (ret != 0)
+        {
+            I2C_GenerateSTOP(I2Cx, ENABLE);
+            return ret;
+        }
+        I2C_SendData(I2Cx, pData[i]);
+    }
+
+    ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_BTF, -5);
+    if (ret != 0)
+    {
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        return ret;
+    }
+
+    I2C_GenerateSTOP(I2Cx, ENABLE);
+    return 0;
+}
+
+int My_I2C_ReceiveBytes(I2C_TypeDef *I2Cx, uint8_t Addr, uint8_t *pData, uint16_t Size)
+{
+    uint16_t timeout;
+    uint16_t i;
+    int ret;
+
+    if (pData == 0 || Size == 0)
+        return -6;
+
+    timeout = 0;
+    while (I2C_GetFlagStatus(I2Cx, I2C_FLAG_BUSY) == SET)
+    {
+        timeout++;
+        if (timeout > MY_I2C_TMO)
+            return -1;
+    }
+
+    I2C_GenerateSTART(I2Cx, ENABLE);
+    ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_SB, -2);
+    if (ret != 0)
+        return ret;
+
+    I2C_SendData(I2Cx, (uint8_t)(Addr | 0x01));
+    ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_ADDR, -3);
+    if (ret != 0)
+    {
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        return ret;
+    }
+
+    if (Size == 1)
+    {
+        I2C_AcknowledgeConfig(I2Cx, DISABLE);
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        My_I2C_ClearAddr(I2Cx);
+
+        ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_RXNE, -4);
+        if (ret != 0)
+            return ret;
+        pData[0] = I2C_ReceiveData(I2Cx);
+    }
+    else if (Size == 2)
+    {
+        I2C_AcknowledgeConfig(I2Cx, DISABLE);
+        I2Cx->CR1 |= I2C_CR1_POS;
+        My_I2C_ClearAddr(I2Cx);
+
+        ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_BTF, -5);
+        if (ret != 0)
+        {
+            I2C_GenerateSTOP(I2Cx, ENABLE);
+            return ret;
+        }
+
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        pData[0] = I2C_ReceiveData(I2Cx);
+        pData[1] = I2C_ReceiveData(I2Cx);
+    }
+    else
+    {
+        My_I2C_ClearAddr(I2Cx);
+
+        for (i = 0; i < (uint16_t)(Size - 3u); i++)
+        {
+            ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_RXNE, -4);
+            if (ret != 0)
+            {
+                I2C_GenerateSTOP(I2Cx, ENABLE);
+                return ret;
+            }
+            pData[i] = I2C_ReceiveData(I2Cx);
+        }
+
+        ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_BTF, -5);
+        if (ret != 0)
+        {
+            I2C_GenerateSTOP(I2Cx, ENABLE);
+            return ret;
+        }
+        I2C_AcknowledgeConfig(I2Cx, DISABLE);
+        pData[Size - 3u] = I2C_ReceiveData(I2Cx);
+
+        ret = My_I2C_WaitFlag(I2Cx, I2C_FLAG_BTF, -5);
+        if (ret != 0)
+        {
+            I2C_GenerateSTOP(I2Cx, ENABLE);
+            return ret;
+        }
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        pData[Size - 2u] = I2C_ReceiveData(I2Cx);
+        pData[Size - 1u] = I2C_ReceiveData(I2Cx);
+    }
+
+    I2C_AcknowledgeConfig(I2Cx, ENABLE);
+    I2Cx->CR1 &= ~I2C_CR1_POS;
+    return 0;
+}
+
+
+int main(void)
+{
+    uint8_t commands[] = {0x00, 0x8d, 0x14, 0xaf, 0xa5};
+
+    My_I2C_Init();
+    My_I2C_SendBytes(I2C1, 0x78, commands, sizeof(commands));
+
+    while (1)
+    {
+    }
+}
