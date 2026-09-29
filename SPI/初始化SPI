@@ -1,0 +1,97 @@
+#include "stm32f10x.h"
+
+void INITSPI1(void);
+void SPITransmitReceive(SPI_TypeDef *SPIx,const uint8_t *pDataTx,uint8_t *pDataRx,uint8_t Size);
+
+int main(void)
+{
+
+	INITSPI1();
+
+    while (1)
+    {
+		
+}
+
+}
+
+void INITSPI1(void){
+
+	//重映射
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO,ENABLE);
+	GPIO_PinRemapConfig(GPIO_Remap_SPI1,ENABLE);
+	
+	//开启时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1,ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA,ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB,ENABLE);
+	
+	//定义结构体
+	GPIO_InitTypeDef gpiostruct;
+	SPI_InitTypeDef initstruct;
+	
+	//miso|mosi初始化，复用输出推挽
+	gpiostruct.GPIO_Pin=GPIO_Pin_3|GPIO_Pin_5;
+	gpiostruct.GPIO_Mode=GPIO_Mode_AF_PP;
+	gpiostruct.GPIO_Speed=GPIO_Speed_2MHz;
+	GPIO_Init(GPIOB,&gpiostruct);
+	
+	//Scl初始化，输入上拉
+	gpiostruct.GPIO_Pin=GPIO_Pin_4;
+	gpiostruct.GPIO_Mode=GPIO_Mode_IPU;
+	gpiostruct.GPIO_Speed=GPIO_Speed_2MHz;
+	GPIO_Init(GPIOB,&gpiostruct);
+	
+	//Scc初始，通用输出推挽
+	gpiostruct.GPIO_Pin=GPIO_Pin_15;
+	gpiostruct.GPIO_Mode=GPIO_Mode_Out_PP;
+	gpiostruct.GPIO_Speed=GPIO_Speed_2MHz;
+	GPIO_Init(GPIOA,&gpiostruct);
+	
+	
+	
+	
+	//初始化SPI
+	initstruct.SPI_Mode=SPI_Mode_Master;
+	initstruct.SPI_DataSize=SPI_DataSize_8b;
+	initstruct.SPI_BaudRatePrescaler=SPI_BaudRatePrescaler_64;
+	initstruct.SPI_CPOL=SPI_CPOL_High;
+	initstruct.SPI_CPHA=SPI_CPHA_2Edge;
+	initstruct.SPI_FirstBit=SPI_FirstBit_MSB;
+	initstruct.SPI_Direction=SPI_Direction_2Lines_FullDuplex;
+	initstruct.SPI_NSS=SPI_NSS_Soft;
+	SPI_Init(SPI1,&initstruct);
+	
+	SPI_NSSInternalSoftwareConfig(SPI1,SPI_NSSInternalSoft_Set);
+}
+
+void SPITransmitReceive(SPI_TypeDef *SPIx,const uint8_t *pDataTx,uint8_t *pDataRx,uint8_t Size){
+	
+	//打开SPI总开关
+	SPI_Cmd(SPI1,ENABLE);
+	
+	//输入第一个数据
+	SPI_I2S_SendData(SPIx,pDataTx[0]);
+	
+	//循环
+	for(uint8_t i =0;i<Size-1;i++){
+		//等待TXE空
+		while(SPI_I2S_GetFlagStatus(SPI1,SPI_I2S_FLAG_TXE)== RESET);
+		
+		//循环输入第i+1个数据
+		SPI_I2S_SendData(SPIx,pDataTx[i+1]);
+		
+		//等待读rx[i+1]
+		while(SPI_I2S_GetFlagStatus(SPIx,SPI_I2S_FLAG_RXNE)==RESET);
+		
+		//循环接收第i+1个数据
+		pDataRx[i]=SPI_I2S_ReceiveData(SPIx);		
+	}
+		//等待读rx[Size-1]
+		while(SPI_I2S_GetFlagStatus(SPIx,SPI_I2S_FLAG_RXNE)==RESET);
+		//接收最后一个数据
+		pDataRx[Size-1]=SPI_I2S_ReceiveData(SPIx);	
+	
+	SPI_Cmd(SPIx,DISABLE);
+	
+}
