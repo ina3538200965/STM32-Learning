@@ -1,0 +1,177 @@
+#include "stm32f10x.h"
+#include "delay.h"
+
+void INITSPI1(void);
+void SPITransmitReceive(SPI_TypeDef *SPIx, const uint8_t *pDataTx, uint8_t *pDataRx, uint8_t Size);
+void App_W25Q64_SaveByte(uint8_t Byte);
+uint8_t App_W25Q64_LoadByte(void);
+
+uint8_t a = 0;
+
+int main(void)
+{
+	INITSPI1();
+	Delay(10); //等待Flash上电稳定
+
+	App_W25Q64_SaveByte(0x12);
+	a = App_W25Q64_LoadByte();
+
+	while (1) {
+	}
+}
+
+void INITSPI1(void)
+{
+	GPIO_InitTypeDef gpiostruct;
+	SPI_InitTypeDef initstruct;
+
+	//重映射
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+	GPIO_PinRemapConfig(GPIO_Remap_SPI1, ENABLE);              /* SPI1 -> PB3/4/5 */
+	GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE);   /* 释放 PA15/PB3/PB4 */
+
+	//开启时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+
+	//SCK、MOSI：复用推挽
+	gpiostruct.GPIO_Pin = GPIO_Pin_3 | GPIO_Pin_5;
+	gpiostruct.GPIO_Mode = GPIO_Mode_AF_PP;
+	gpiostruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOB, &gpiostruct);
+
+	//MISO：浮空输入
+	gpiostruct.GPIO_Pin = GPIO_Pin_4;
+	gpiostruct.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	gpiostruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOB, &gpiostruct);
+
+	//CS：通用推挽，默认高
+	gpiostruct.GPIO_Pin = GPIO_Pin_15;
+	gpiostruct.GPIO_Mode = GPIO_Mode_Out_PP;
+	gpiostruct.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOA, &gpiostruct);
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+
+	//SPI Mode0
+	initstruct.SPI_Mode = SPI_Mode_Master;
+	initstruct.SPI_DataSize = SPI_DataSize_8b;
+	initstruct.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_64;
+	initstruct.SPI_CPOL = SPI_CPOL_Low;
+	initstruct.SPI_CPHA = SPI_CPHA_1Edge;
+	initstruct.SPI_FirstBit = SPI_FirstBit_MSB;
+	initstruct.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
+	initstruct.SPI_NSS = SPI_NSS_Soft;
+	initstruct.SPI_CRCPolynomial = 7;
+	SPI_Init(SPI1, &initstruct);
+
+	SPI_NSSInternalSoftwareConfig(SPI1, SPI_NSSInternalSoft_Set);
+	SPI_Cmd(SPI1, ENABLE); /* 之后一直保持使能 */
+}
+
+void SPITransmitReceive(SPI_TypeDef *SPIx, const uint8_t *pDataTx, uint8_t *pDataRx, uint8_t Size)
+{
+	uint8_t i;
+
+	if (Size == 0 || pDataTx == 0 || pDataRx == 0) {
+		return;
+	}
+
+	for (i = 0; i < Size; i++) {
+		while (SPI_I2S_GetFlagStatus(SPIx, SPI_I2S_FLAG_TXE) == RESET);
+		SPI_I2S_SendData(SPIx, pDataTx[i]);
+		while (SPI_I2S_GetFlagStatus(SPIx, SPI_I2S_FLAG_RXNE) == RESET);
+		pDataRx[i] = (uint8_t)SPI_I2S_ReceiveData(SPIx);
+	}
+
+	while (SPI_I2S_GetFlagStatus(SPIx, SPI_I2S_FLAG_BSY) == SET);
+}
+
+void App_W25Q64_SaveByte(uint8_t Byte)
+{
+	uint8_t buffer[10];
+	uint32_t t0;
+
+	//写使能
+	buffer[0] = 0x06;
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+	SPITransmitReceive(SPI1, buffer, buffer, 1);
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+
+	//扇区擦除
+	buffer[0] = 0x20;
+	buffer[1] = 0x00;
+	buffer[2] = 0x00;
+	buffer[3] = 0x00;
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+	SPITransmitReceive(SPI1, buffer, buffer, 4);
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+
+	//等待空闲
+	t0 = GetTick();
+	while (1) {
+		GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+		buffer[0] = 0x05;
+		SPITransmitReceive(SPI1, buffer, buffer, 1);
+		buffer[0] = 0xff;
+		SPITransmitReceive(SPI1, buffer, buffer, 1);
+		GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+		if ((buffer[0] & 0x01) == 0) {
+			break;
+		}
+		if ((GetTick() - t0) > 500) {
+			return;
+		}
+	}
+
+	//再次写使能
+	buffer[0] = 0x06;
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+	SPITransmitReceive(SPI1, buffer, buffer, 1);
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+
+	//页编程
+	buffer[0] = 0x02;
+	buffer[1] = 0x00;
+	buffer[2] = 0x00;
+	buffer[3] = 0x00;
+	buffer[4] = Byte;
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+	SPITransmitReceive(SPI1, buffer, buffer, 5);
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+
+	//等待空闲
+	t0 = GetTick();
+	while (1) {
+		GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+		buffer[0] = 0x05;
+		SPITransmitReceive(SPI1, buffer, buffer, 1);
+		buffer[0] = 0xff;
+		SPITransmitReceive(SPI1, buffer, buffer, 1);
+		GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+		if ((buffer[0] & 0x01) == 0) {
+			break;
+		}
+		if ((GetTick() - t0) > 500) {
+			return;
+		}
+	}
+}
+
+uint8_t App_W25Q64_LoadByte(void)
+{
+	uint8_t buffer[10];
+
+	buffer[0] = 0x03;
+	buffer[1] = 0x00;
+	buffer[2] = 0x00;
+	buffer[3] = 0x00;
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_RESET);
+	SPITransmitReceive(SPI1, buffer, buffer, 4);
+	buffer[0] = 0xff;
+	SPITransmitReceive(SPI1, buffer, buffer, 1);
+	GPIO_WriteBit(GPIOA, GPIO_Pin_15, Bit_SET);
+
+	return buffer[0];
+}
