@@ -1,0 +1,88 @@
+#include "stm32f10x.h"
+#include "delay.h"
+
+
+void initled(void);
+void buttonled(void);
+
+int main(void){
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+	initled();
+	buttonled();
+
+	while(1){
+
+	}
+}
+
+
+//板载led初始化
+void initled(void){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC,ENABLE);
+	GPIO_InitTypeDef gpio;
+	gpio.GPIO_Pin=GPIO_Pin_13;
+	gpio.GPIO_Mode=GPIO_Mode_Out_OD;
+	gpio.GPIO_Speed=GPIO_Speed_50MHz;
+	GPIO_Init(GPIOC,&gpio);
+	
+	//默认led熄灭
+	GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_SET);
+}
+
+
+void buttonled(void){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA,ENABLE);
+	GPIO_InitTypeDef gpio;
+	
+	//PA5
+	gpio.GPIO_Mode=GPIO_Mode_IPU;
+	gpio.GPIO_Pin=GPIO_Pin_5;
+	GPIO_Init(GPIOA,&gpio);
+	
+	//PA6
+	gpio.GPIO_Mode=GPIO_Mode_IPU;
+	gpio.GPIO_Pin=GPIO_Pin_6;
+	GPIO_Init(GPIOA,&gpio);	
+	
+	//分配EXIT5和EXIT6的引脚
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO,ENABLE);
+	
+	GPIO_EXTILineConfig(GPIO_PortSourceGPIOA,GPIO_PinSource5);
+	GPIO_EXTILineConfig(GPIO_PortSourceGPIOA,GPIO_PinSource6);
+	
+	//EXTI定义结构体
+	EXTI_InitTypeDef exti;
+	
+	exti.EXTI_Mode=EXTI_Mode_Interrupt;
+	exti.EXTI_Line=EXTI_Line5;
+	exti.EXTI_Trigger=EXTI_Trigger_Rising;
+	exti.EXTI_LineCmd=ENABLE;
+	EXTI_Init(&exti);
+	
+	exti.EXTI_Mode=EXTI_Mode_Interrupt;
+	exti.EXTI_Line=EXTI_Line6;
+	exti.EXTI_Trigger=EXTI_Trigger_Rising;
+	exti.EXTI_LineCmd=ENABLE;
+	EXTI_Init(&exti);
+	
+	
+	//配置中断
+	NVIC_InitTypeDef nvic;
+	nvic.NVIC_IRQChannel=EXTI9_5_IRQn;
+	nvic.NVIC_IRQChannelPreemptionPriority=0;
+	nvic.NVIC_IRQChannelSubPriority=0;
+	nvic.NVIC_IRQChannelCmd=ENABLE;
+	NVIC_Init(&nvic);
+	
+}
+
+void EXTI9_5_IRQHandler(void){
+	if(EXTI_GetITStatus(EXTI_Line5)==SET){
+		EXTI_ClearITPendingBit(EXTI_Line5);
+		GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_RESET);
+	}
+	if(EXTI_GetITStatus(EXTI_Line6)==SET){
+		EXTI_ClearITPendingBit(EXTI_Line6);
+		GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_SET);
+	}
+}
