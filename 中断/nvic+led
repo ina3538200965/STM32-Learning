@@ -20,7 +20,6 @@ int main(void){
 }
 
 
-
 void initled(void){
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC,ENABLE);
 	GPIO_InitTypeDef gpio;
