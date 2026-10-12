@@ -1,0 +1,82 @@
+#include "stm32f10x.h"
+
+volatile uint32_t currenttime = 0;
+
+void delayzzz(uint32_t ms);
+void timeinit(void);
+void ledinit(void);
+
+int main(void){
+
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+	
+	timeinit();
+	ledinit();
+	while(1){
+		GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_SET);
+		delayzzz(500);
+		GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_RESET);
+		delayzzz(500);
+	}
+}
+
+
+void delayzzz(uint32_t ms){
+	volatile uint32_t expiretime =currenttime + ms;
+
+	while(currenttime < expiretime){
+	}
+}
+
+
+void timeinit(void){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1,ENABLE);
+	
+	TIM_TimeBaseInitTypeDef tim;
+	
+	tim.TIM_Prescaler=71;
+	tim.TIM_Period=999;
+	tim.TIM_CounterMode=TIM_CounterMode_Up;
+	tim.TIM_RepetitionCounter=0;
+	
+	//开启预加载
+	TIM_ARRPreloadConfig(TIM1,ENABLE);
+	TIM_TimeBaseInit(TIM1,&tim);
+	TIM_Cmd(TIM1,ENABLE);
+
+	//配置中断
+	TIM_ITConfig(TIM1,TIM_IT_Update,ENABLE);
+
+
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO,ENABLE);
+	
+	NVIC_InitTypeDef nvic;
+	nvic.NVIC_IRQChannel=TIM1_UP_IRQn;
+	nvic.NVIC_IRQChannelPreemptionPriority=2;
+	nvic.NVIC_IRQChannelSubPriority=2;
+	nvic.NVIC_IRQChannelCmd=ENABLE;
+	
+	NVIC_Init(&nvic);
+}
+
+void TIM1_UP_IRQHandler(void){
+	if(TIM_GetFlagStatus(TIM1,TIM_FLAG_Update)==Bit_SET){ //查标志
+		
+		TIM_ClearFlag(TIM1,TIM_FLAG_Update);//清除标志位
+		
+		currenttime++;}
+}
+
+
+void ledinit(void){
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC,ENABLE);
+	
+	GPIO_InitTypeDef gpio;
+	gpio.GPIO_Mode=GPIO_Mode_Out_OD;
+	gpio.GPIO_Pin=GPIO_Pin_13;
+	gpio.GPIO_Speed=GPIO_Speed_50MHz;
+	
+	GPIO_Init(GPIOC,&gpio);
+	
+	GPIO_WriteBit(GPIOC,GPIO_Pin_13,Bit_SET);
+}
